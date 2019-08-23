@@ -1,0 +1,175 @@
+import hycohanz as hfss
+import os
+
+
+def vm(x):
+    """
+    transfer float to string, as the value of property
+    :param x:
+        float
+    :return:
+        string
+    """
+    return str(x) + 'mm'
+
+
+def increment_name(base, existing):
+    """
+    check and create new name
+    :param base:
+        name
+    :param existing:
+        namelist
+    :return:
+        new name
+    """
+    if not base in existing:
+        return base
+    n = 1
+    make_name = lambda: base + str(n)
+    while make_name() in existing:
+        n += 1
+    return make_name()
+
+
+def exist(x, x_str):
+    if x <= 0:
+        print (x_str + "<=0")
+        exit()
+    else:
+        return True
+
+
+# setup interface to HFSS
+[oAnsoftApp, oDesktop] = hfss.setup_interface()
+
+filename = 'C:\Users\dell\Desktop\summer\python-hfss\hycohanz\CPW.aedt'
+# check if there already exists a file
+if os.path.exists(filename):
+    project = hfss.open_project(oDesktop, filename)
+else:
+    project = hfss.new_project(oDesktop)
+
+design = hfss.insert_design(project, increment_name('CPW capacitor', hfss.get_top_design_list(project)), 'DrivenModal')
+
+# set the active editor
+oEditor = hfss.set_active_editor(design)
+
+# set units (doesn't matter)
+hfss.set_units(oEditor, "mm")
+
+# set variables
+h = 0.5
+hfss.add_property(design, 'h', vm(h))
+a = 3.6
+hfss.add_property(design, 'a', vm(a))
+b = 2
+hfss.add_property(design, 'b', vm(b))
+var_x = 1.04
+hfss.add_property(design, 'var_x', vm(var_x))
+var_y = 0.6
+hfss.add_property(design, 'var_y', vm(var_y))
+l0 = (b - var_y) / 2
+if exist(l0, 'l0'):
+    hfss.add_property(design, 'l0', 'b/2-var_y/2')
+l2 = 0.1
+hfss.add_property(design, "l2", vm(l2))
+l3 = 0.2
+hfss.add_property(design, "l3", vm(l3))
+l4 = 0.15
+hfss.add_property(design, "l4", vm(l4))
+d = 0.02
+hfss.add_property(design, "d", vm(d))
+l1 = (var_y - l2 - l3 - l4 - 2 * d) / 2
+if exist(l1, 'l1'):
+    hfss.add_property(design, "l1", '(var_y - l2 - l3 - l4 - 2 * d)/2')
+W = 0.1
+hfss.add_property(design, 'W', vm(W))
+W1 = 0.05
+hfss.add_property(design, "W1", vm(W1))
+W2 = 0.05
+hfss.add_property(design, "W2", vm(W2))
+n = 4
+hfss.add_property(design, 'n', n)
+d1 = var_x / 2 - (n-1) * W2 - (n - 1 / 2) * W1
+if exist(d1, 'd1'):
+    hfss.add_property(design, "d1", 'var_x / 2 - (n-1) * W2 - (n - 1 / 2) * W1')
+
+# create substrate and surface
+substrate = hfss.create_box(oEditor,
+                            0,
+                            0,
+                            '-h',
+                            'a',
+                            'b',
+                            'h',
+                            Name='Substrate',
+                            Color=(143, 175, 143),
+                            Transparency=0.75,
+                            MaterialValue='\"sapphire\"')
+
+surface = hfss.create_rectangle(oEditor, 0, 0, 0, 'a', 'b', Color=(255, 128, 64))
+
+# boundary line
+boundary = hfss.create_rectangle(oEditor, 'a/2-var_x/2', 'l0', 0, 'var_x', 'var_y')
+
+# CPW line
+cl = [hfss.create_rectangle(oEditor, 'a/2-W/2', 'l0', 0, 'W', 'l1'),
+      hfss.create_rectangle(oEditor, 'a/2-(n-1/2)*W1-(n-1)*W2', 'l0+l1', 0, '(2*n-1)*W1+2*(n-1)*W2', 'l2')]
+for i in range(n):
+    cl.append(
+        hfss.create_rectangle(oEditor, 'a/2-(n-1/2)*W1-(n-1)*W2+' + str(i) + '*2*(W1+W2)', 'l0+l1+l2', 0, 'W1', 'd+l3'))
+for i in range(n - 1):
+    cl.append(
+        hfss.create_rectangle(oEditor, 'a/2-(n-1/2)*W1-(n-1)*W2+' + str(i) + '*2*(W1+W2)+(W1+W2)', 'l0+l1+l2+d', 0,
+                              'W1', 'd+l3'))
+cl.append(hfss.create_rectangle(oEditor, 'a/2-(n-1/2)*W1-(n-1)*W2', 'l0+l1+l2+l3+2*d', 0,
+                                '(2*n-1)*W1+2*(n-1)*W2', 'l4'))
+cl.append(hfss.create_rectangle(oEditor, 'a/2-W/2', 'l0+l1+l2+l3+l4+2*d', 0, 'W', 'l1'))
+finger = hfss.unite(oEditor, cl)
+# subtract the face
+surface = hfss.subtract(oEditor, [surface], [boundary])
+cpw = hfss.unite(oEditor, [finger, surface])
+lumped_port1 = hfss.create_rectangle(oEditor, 'a/2-W/2', 'l0', 0, 'W', 'l1/5')
+lumped_port2 = hfss.create_rectangle(oEditor, 'a/2-W/2', 'l0+var_y-l1/5', 0, 'W', 'l1/5')
+cpw = hfss.subtract(oEditor, [cpw], [lumped_port1])
+cpw = hfss.subtract(oEditor, [cpw], [lumped_port2])
+
+# set perfect E
+hfss.assign_perfect_e(design, "PerfectE1", [cpw])
+
+# set excitation port
+lumped_port1 = hfss.create_rectangle(oEditor, 'a/2-W/2', 'l0', 0, 'W', 'l1/5')
+lumped_port2 = hfss.create_rectangle(oEditor, 'a/2-W/2', 'l0+var_y-l1/5', 0, 'W', 'l1/5')
+hfss.assign_lumpedport(design, '1', [a / 2, l0, 0], [a / 2, l0 + l1 / 5, 0], [lumped_port1])
+hfss.assign_lumpedport(design, '2', [a / 2, l0 + var_y, 0], [a / 2, l0 + var_y - l1 / 5, 0], [lumped_port2])
+
+# set region
+region = hfss.create_region(oEditor, "5mm")
+hfss.assign_perfect_e(design, "PerfectE2", [region])
+
+# insert analysis setup
+setup = hfss.insert_analysis_setup(design, 5)
+hfss.insert_frequency_sweep(design, setup, "Sweep1", 1, 10, count=20000)
+
+# solve and analyze
+hfss.solve(design, [setup])
+
+# create plot
+hfss.create_output_variable(design, "Capacitance", "1e12*im((Y(1,1)+Y(2,2)-Y(1,2)-Y(2,1))/4)/(2*pi*freq)")
+hfss.create_output_variable(design, "Q", "-im(Y(1,1)+Y(2,2)-Y(1,2)-Y(2,1))/re(Y(1,1)+Y(2,2)-Y(1,2)-Y(2,1))")
+hfss.create_report(design, "S Parameter Plot", "dB(S(1,1))")
+hfss.create_report(design, "C Plot", "Capacitance")
+hfss.create_report(design, "C Table", "Capacitance", ReportType='Data Table')
+hfss.create_report(design, "Q Plot", "Q")
+hfss.create_report(design, "Q Table", "Q", ReportType='Data Table')
+
+raw_input('Press "Enter" to quit HFSS.>')
+hfss.save_as_project(oDesktop, filename)
+hfss.quit_application(oDesktop)
+
+del oAnsoftApp
+del oDesktop
+del project
+del design
+del oEditor
